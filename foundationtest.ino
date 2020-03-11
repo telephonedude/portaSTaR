@@ -19,18 +19,19 @@ unsigned long test_target_time = 0L ; //reset timer
 Servo servo; //360 degree motor
 Servo servo2; //90 degree tilt
 Servo servo3; //solar panel
+Servo servo4; // solar panel
 //servos
 int serialData = 0;
 char input;
 //ldrs
-int ldrtopl = A12; //top left LDR 
+int ldrtopl = A8; //top left LDR 
 int ldrtopr = A11; //top right LDR 
-int ldrbotl = A13; // bottom left LDR 
-int ldrbotr = A10; // bottom right LDR 
+int ldrbotl = A10; // bottom left LDR 
+int ldrbotr = A12; // bottom right LDR 
 //ldrs
 //vertical servo
-int servoVerticalLimitHigh = 90;
-int servoVerticalLimitLow = 30;
+int servoVerticalLimitHigh = 120;
+int servoVerticalLimitLow = 0;
 int servov = 30;
 int servosolar=0; 
 //vertical servo
@@ -61,7 +62,6 @@ const int rainsensor = 15;
 
 void setup(){
   //relay for whole system
-  
   digitalWrite(23, HIGH);  
   delay(3000);
   digitalWrite(23, LOW);  
@@ -73,6 +73,7 @@ void setup(){
   servo.attach(9); //360 motor
   servo2.attach(12); // 90 degree tilt
   servo3.attach(14); // solar panel
+  servo4.attach(29); // solar panel
   //servo motor attachments
   //button attachments
   pinMode(3, INPUT_PULLUP); //extend button
@@ -80,8 +81,6 @@ void setup(){
   pinMode(22, INPUT_PULLUP); //recalibrate button
   //button attachments
   //limit switch attachments
-  pinMode(5, INPUT); //limit switch down
-  pinMode(4, INPUT); //limit switch up
   pinMode(10, INPUT); //limit switch max counterclockwise
   pinMode(13, INPUT); //limit switch max clockwise
   //limit switch attachments
@@ -105,13 +104,17 @@ void setup(){
   pinMode(rainsensor, INPUT);
   //rain sensor
   //tilt servo to top
-  servo2.write(30);
+  servo.write(90);
+  servo2.write(0);
+  servo3.write(20);
+  servo4.write(40);
   //tilt servo to top 
+  
 }
 
 void loop()
 {  
-  Serial.println(digitalRead(rainsensor));
+  
   if(freshreset == false)
   {
   unsigned long currentMillis = millis(); //1 hour calibration
@@ -132,10 +135,8 @@ void loop()
         }
       }
    }
-  sensorreading();
-  checklimitswitches(); 
+  sensorreading(); 
   checkbuttonpress();
-  servocontrol(); 
   }
   else
   {
@@ -168,38 +169,21 @@ void sensorreading()
   lcd.print("Light: ");
   lcd.print(lux);
   lcd.println(" lux    ");
-  if (lux<10)
+  if (lux<25)
   {
     if(nolight == false)
     {
-        servov = servo2.read();
-      for(int angle = servov; angle >= 30; angle -= 1)  
-        {                                  
-          servo2.write(angle);               
-          servov = angle;               
-          delay(30);                       
-        } 
-      while (digitalRead(13)!=0)
-        {
-          servo.write(80);
-        }
-        servo.write(90);
-        servosolar = servo3.read();
-      for(int angle = servosolar; angle<=110; angle+=1)     
-        {                                
-          servo3.write(angle);             
-          delay(30);                       
-        } 
-        nolight = true;
-        lcd.clear();
-        lcd.setCursor(0,0);
-        lcd.print("Not enought light");
-        lcd.setCursor(0,1);
-        lcd.print("Currently closing");
-        delay(5000);
-        freshreset = true;
-        digitalWrite(23, HIGH);  
-        return;
+      retract();
+      nolight = true;
+      lcd.clear();
+      lcd.setCursor(0,0);
+      lcd.print("Not enought light");
+      lcd.setCursor(0,1);
+      lcd.print("Currently closing");
+      delay(5000);
+      freshreset = true;
+      digitalWrite(23, HIGH);  
+      return;
       }
   }
   else
@@ -210,43 +194,33 @@ void sensorreading()
 
    //uv meter lcd
   lcd.setCursor(0,1);
-  lcd.print("UV Rays:");
+  lcd.print("AAUV Rays:");
   lcd.print(uvIntensity); 
   lcd.print(" mW/cm");
-
-  if(uvIntensity < .70f)
+  if(uvIntensity < .30f)
   {
+    delay(7000);
+    uvLevel = averageAnalogRead(UVOUT);
+    refLevel = averageAnalogRead(REF_3V3);
+    outputVoltage = 3.3 / refLevel * uvLevel;
+    uvIntensity = mapfloat(outputVoltage, 0.99, 2.8, 0.0, 15.0);
     if(noUV == false)
     {
-        servov = servo2.read();
-      for(int angle = servov; angle >= 30; angle -= 1)    
-        {                                  
-          servo2.write(angle);    
-          servov = angle;           
-          delay(30);                       
-        } 
-        while (digitalRead(13)!=0)
-        {
-          servo.write(80);
-        }
-        servo.write(90);
-        servosolar = servo3.read();
-        for(int angle = servosolar; angle<=110; angle+=1)     
-        {                                
-          servo3.write(angle);           
-          delay(30);                       
-        } 
-        noUV = true;
-        lcd.clear();
-        lcd.setCursor(0,0);
-        lcd.print("Not enough UV rays");
-        lcd.setCursor(0,1);
-        lcd.print("Currently closing");
-        delay(5000);
-        freshreset = true;
-        digitalWrite(23, HIGH); 
-        return;
+      if(uvIntensity < .30f)
+      {
+      retract();   
+      noUV = true;
+      lcd.clear();
+      lcd.setCursor(0,0);
+      lcd.print("Not enough UV rays");
+      lcd.setCursor(0,1);
+      lcd.print("Currently closing");
+      delay(5000);
+      freshreset = true;
+      digitalWrite(23, HIGH); 
+      return;
       }
+    }
   }
   else
   {
@@ -262,83 +236,47 @@ void sensorreading()
   {
     if(toohot == false)
     {
-        servov = servo2.read();
-      for(int angle = servov; angle >= 30; angle -= 1)  
-        {                                  
-          servo2.write(angle);              
-          servov = angle;              
-          delay(30);                       
-        } 
-        while (digitalRead(13)!=0)
-        {
-          servo.write(80);
-        }
-        servo.write(90);
-        servosolar = servo3.read();
-        for(int angle = servosolar; angle<=110; angle+=1)     
-        {                                
-          servo3.write(angle);             
-          delay(30);                       
-        } 
-        toohot = true;
-        lcd.clear();
-        lcd.setCursor(0,0);
-        lcd.print("Temperatures too hot");
-        lcd.setCursor(0,1);
-        lcd.print("Currently closing");
-        delay(5000);
-        freshreset = true;
-        digitalWrite(23, HIGH);  
-        return;
-      }
+      retract();
+      toohot = true;
+      lcd.clear();
+      lcd.setCursor(0,0);
+      lcd.print("Temperatures too hot");
+      lcd.setCursor(0,1);
+      lcd.print("Currently closing");
+      delay(5000);
+      freshreset = true;
+      digitalWrite(23, HIGH);  
+      return;
+     }
   }
   else
   {
     toohot = false;
   }
   //temperature lcd
-  //rainsensor lcd
   
+  //rainsensor lcd
   if(digitalRead(rainsensor) == 0) 
     {
-      delay(10000);
       if(digitalRead(rainsensor) == 0) 
         {
-      if(raining == false)
-      {
-      lcd.setCursor(0,3);
-      lcd.println("Currently raining"); 
-        servov = servo2.read();
-        
-      for(int angle = servov; angle >= 30; angle -= 1)   
-        {                                  
-          servo2.write(angle);          
-          servov = angle;               
-          delay(30);                       
-        } 
-        while (digitalRead(13)!=0)
-        {
-          servo.write(80);
-        }
-        servo.write(90);
-        servosolar = servo3.read();
-        for(int angle = servosolar; angle<=110; angle+=1)   
-        {                                
-          servo3.write(angle);             
-          delay(30);                       
-        }
-        
-        raining = true;
-        lcd.clear();
-        lcd.setCursor(0,0);
-        lcd.print("Presently raining");
-        lcd.setCursor(0,1);
-        lcd.print("Currently closing");
-        delay(5000);
-        freshreset = true;
-        digitalWrite(23, HIGH);  
-        return;
-      }
+          if(raining == false)
+          {
+            lcd.setCursor(0,3);
+            lcd.println("Currently raining"); 
+            retract();
+            raining = true;
+            lcd.clear();
+            lcd.setCursor(0,0);
+            lcd.print("Presently raining");
+            lcd.setCursor(0,1);
+            lcd.print("Currently closing");
+            delay(5000);
+            freshreset = true;
+            raining = true;
+            digitalWrite(23, HIGH);  
+            return;
+          }
         }
     }
   else
@@ -348,52 +286,36 @@ void sensorreading()
       lcd.println("No current rain   "); 
     }
   //rainsensor lcd
+  
   //lcd placements
   
 }
 //lcd sensor updates
 
-//stops 360 motor rotation
-void stoprotate()
-{
-  servo.write(90);
-}
-//stops 360 motor rotation
-
-//limit switches checker
-void checklimitswitches()
-{
-  if(digitalRead(10) == 0) {
-    stoprotate();
-  }
-  
-  if(digitalRead(13) == 0) {
-    stoprotate();
-  }
-}
-//limit switches checker
-
 // ldr sun tracking
 void suntracking()
   {
+      lcd.clear();
+      lcd.setCursor(0,0);
+      lcd.println("Currently suntracking"); 
       servov = servo2.read();  
-      int topl = analogRead(ldrtopl);
-      int topr = analogRead(ldrbotr);
-      int botl = analogRead(ldrtopr);
-      int botr = analogRead(ldrbotl);
+      int topl = analogRead(ldrbotl);//ldrtopl
+      int topr = analogRead(ldrtopl);//ldrbotl
+      int botl = analogRead(ldrtopr); //ldrbotr
+      int botr = analogRead(ldrbotr); //ldrtopr
       // calculating average
       int avgtop = (topl + topr) / 2; //average of top LDRs
       int avgbot = (botl + botr) / 2; //average of bottom LDRs
-      int avgleft = (topl + botl) / 2; //average of left LDRs
-      int avgright = (topr + botr) / 2; //average of right LDRs
+      int avgright =(topl + botl)/ 2; //average of left LDRs
+      int avgleft =(topr + botr) / 2; //average of right LDRs
       //averages
       int avgtilt;
       int avgrotate;
+
       if (avgtop < avgbot)
       {
           avgtilt = avgbot - avgtop;
-          //up and down tilt
-          if(avgtilt > 100)
+          if(avgtilt > 75)
           {
             servov = servov - 1;
             if (servov < servoVerticalLimitLow)
@@ -407,13 +329,12 @@ void suntracking()
         else if (avgbot < avgtop)
         {
           avgtilt = avgtop - avgbot;
-          if(avgtilt > 100)
+          if(avgtilt > 75)
           {
-          
           servov = servov + 1;
           if (servov > servoVerticalLimitHigh) 
            { 
-            servov = servoVerticalLimitHigh;
+              servov = servoVerticalLimitHigh;
            }
           servo2.write(servov);
           delay(30);
@@ -424,197 +345,136 @@ void suntracking()
           servo2.write(servov);
           Serial.println("perfect tilt");
         }
-        /* ----------------------------------------------------------------------------------------------------------
-        ------==========-----------========---------------------------------------------------------------------------
-         //counterclockwise & clockwise*/
+         
         if (avgleft > avgright)
         {
           avgrotate = avgleft - avgright;
-          if(avgrotate > 100)
+          if(avgrotate > 50)
             {
-            if (digitalRead(10) == 0)
+            if (digitalRead(13) == 0)
               {
               servo.write(90);
-              Serial.println("stopping counter clockwise");
               }
             else
               {
-              servo.write(100);
+              servo.write(97);
               }
-            Serial.println("rotating counter clockwise");
-            
             }
         }
         else if (avgright > avgleft)
         {
           avgrotate = avgright - avgleft;
-          if(avgrotate > 100)
+          if(avgrotate > 50)
             {
-            if (digitalRead(13) == 0)
+            if (digitalRead(10) == 0)
               {
               servo.write(90);
-              Serial.println("stopping clockwise");
               }
             else
-            {  
-            servo.write(80);
-            }
-            Serial.println("rotating clockwise");
+              {  
+              servo.write(85);
+              }
             }
         }
         else 
         {
           servo.write(90);
-          Serial.println("perfect rotation");
         }
-        
-  }
+ }
   
 // ldr sun tracking
-  
-void servocontrol()
-{/*
-  while (Serial.available() > 0) {
-   char incomingCharacter = Serial.read();
-   switch (incomingCharacter) 
-   {
-      case 'd': //extend solars
-        for(int angle = 100; angle>=10; angle-=1)     // command to move from 180 degrees to 0 degrees 
-        {                                
-          servo3.write(angle);              //command to rotate the servo to the specified angle
-          delay(30);                       
-        } 
-        break;
-
-      case 'f': //retract solars
-        for(int angle = 10; angle<=100; angle+=1)     // command to move from 180 degrees to 0 degrees 
-        {                                
-          servo3.write(angle);              //command to rotate the servo to the specified angle
-          delay(30);                       
-        } 
-        break;
-      
-      case 'g': // tilt solar panels 
-        for(int angle = servov; angle <= 90; angle += 1)    // command to move from 0 degrees to 180 degrees 
-        {                                  
-          servo2.write(angle);                 //command to rotate the servo to the specified angle
-          servov = angle;
-          delay(30);                       
-        } 
-        break;
-
-      case 'h': // reset solar panels
-        for(int angle = servov; angle >= 30; angle -= 1)    // command to move from 0 degrees to 180 degrees 
-        {                                  
-          servo2.write(angle);               //command to rotate the servo to the specified angle
-          servov = angle;                //command to rotate the servo to the specified angle
-          delay(30);                       
-        } 
-        break;
-        
-      case 'j':
-        servo.write(80); // clockwise
-        delay(500);
-        break; 
-
-      case 'k':
-        servo.write(105); //counterclockwise
-        delay(500);
-        break; 
-    }
-}*/
-}
-
+ 
 //checks if button is being pressed
 void checkbuttonpress()
 {
-  if(digitalRead(3)==0) //up
+  if(digitalRead(3)==0)
   {
+    servov = servo2.read();
     if(freshreset == true)
-    {
-    reset();
-    freshreset = false;
+    { 
+      reset();
+      freshreset = false;
     }
-    Serial.println("UP BUTTON IS PRESSED");
+    lcd.clear();
+    lcd.setCursor(0,0);
+    lcd.println("Open Button Pressed");
     //solar panel extend
     servosolar = servo3.read();
-    for(int angle = servosolar; angle>=10; angle-=1)     // command to move from 180 degrees to 0 degrees 
-      {     
-        servo3.write(angle);   
-        if(angle == 10)
-        {
-          Serial.println("triggered track function");
-          tensectracking();
-        }           //command to rotate the servo to the specified angle
-        delay(30);                      
-      } 
-    //solar panel extend
-    digitalWrite(22,0);
+    for(int angle = servosolar; angle<=143; angle+=1)     // command to move from 180 degrees to 0 degrees 
+    {            
+      if(angle>40)
+      {
+      servo4.write(angle-3);
+      }                      
+      servo3.write(angle);  
+      if(angle == 10)
+      {
+        suntracking();
+      }           
+      delay(30);                       
+    } 
+    for(int angle = servov; angle<=30; angle+=1)     // command to move from 180 degrees to 0 degrees 
+    {     
+      servo2.write(angle); 
+      delay(25);                      
     }
- 
-        
-  else if(digitalRead(11)==0) // down
+  }
+  if(freshreset == false)
   {
+     if(digitalRead(11)==0) // down
+    {
+      lcd.clear();
+      lcd.setCursor(0,0);
+      lcd.println("Down Button Pressed");
       servov = servo2.read();
-    for(int angle = servov; angle >= 30; angle -= 1)    // command to move from 0 degrees to 180 degrees 
+      for(int angle = servov; angle >= 30; angle -= 1)    // command to move from 0 degrees to 180 degrees 
       {                                  
         servo2.write(angle);               //command to rotate the servo to the specified angle
         servov = angle;                //command to rotate the servo to the specified angle
         delay(30);                       
       } 
-      while (digitalRead(13)!=0)
+      while (digitalRead(10)!=0)
       {
         servo.write(80);
       }
-        servo.write(90);
-    servosolar = servo3.read();
-      for(int angle = servosolar; angle<=110; angle+=1)     // command to move from 180 degrees to 0 degrees 
-      {                                
-        servo3.write(angle);              //command to rotate the servo to the specified angle
-        delay(30);                       
-      } 
-    digitalWrite(23, HIGH);
-  }
-  
-  else if(digitalRead(22)==0) // recalibrate
-  {
-    if(toohot != true && raining != true && noUV != true && nolight != true)
-    {
-      for(;;)
-      {
-        unsigned long currentMillis = millis();
-        if (currentMillis - test_target_time >= test_timer) {
-          // save the last time you blinked the LED
-          test_target_time = currentMillis;
-          break;
-        }
-        suntracking();
-        Serial.println("currently in recalibration suntracking");
-      }
+     servo.write(90);
+     servosolar = servo3.read();
+      for(int angle = servosolar; angle>=10; angle-=1)     // command to move from 180 degrees to 0 degrees 
+        {     
+          servo4.write(angle+3);   
+          servo3.write(angle);         //command to rotate the servo to the specified angle
+          delay(25);                      
+        } 
+      lcd.clear();
+      lcd.setCursor(0,0);
+      lcd.print("Down button pressed");
+      lcd.setCursor(0,1);
+      lcd.print("Currently closing");
+      delay(5000);
+      digitalWrite(23, HIGH);
     }
-  }
+    else if(digitalRead(22)==0)
+    {
+      if(toohot != true && raining != true && noUV != true && nolight != true)
+      {
+        for(;;)
+        {
+          lcd.clear();
+          lcd.setCursor(0,0);
+          lcd.println("Calibrate Button Pressed");
+          unsigned long currentMillis = millis();
+          if (currentMillis - test_target_time >= test_timer) 
+          {
+            test_target_time = currentMillis;
+            break;
+          }
+          suntracking();
+        }
+      }
+     }
+    }
  }
 //checks if button is being pressed
-
- //tracks the sun for 10 seconds
- void tensectracking()
- {      
-  if(toohot != true && raining != true && noUV != true && nolight != true)
-      {
-  for(;;)
-    {
-      unsigned long currentMillis = millis();
-      if (currentMillis - test_target_time >= test_timer) {
-        // save the last time you blinked the LED
-        test_target_time = currentMillis;
-        break;
-      }
-      suntracking();
-      Serial.println("currently in function suntracking");
-    }
-      }
- }
- //tracks the sun for 10 seconds
 
 //UV sensor stuff
 int averageAnalogRead(int pinToRead)
@@ -623,8 +483,10 @@ int averageAnalogRead(int pinToRead)
   unsigned int runningValue = 0; 
 
   for(int x = 0 ; x < numberOfReadings ; x++)
+  {
     runningValue += analogRead(pinToRead);
-  runningValue /= numberOfReadings;
+    runningValue /= numberOfReadings;
+  }
 
   return(runningValue);  
 }
@@ -639,7 +501,31 @@ void(* resetFunc) (void) = 0;
 
 void reset()
 { 
-soft_restart();
+  soft_restart();
   delay(100);
   Serial.println("never happens");
+}
+
+void retract()
+{
+    servov = servo2.read();
+    for(int angle = servov; angle >= 30; angle -= 1)    // command to move from 0 degrees to 180 degrees 
+      {                                  
+        servo2.write(angle);               //command to rotate the servo to the specified angle
+        servov = angle;                //command to rotate the servo to the specified angle
+        delay(30);                       
+      } 
+      while (digitalRead(10)!=0)
+      {
+        servo.write(80);
+      }
+    servo.write(90);
+    servosolar = servo3.read();
+    for(int angle = servosolar; angle>=10; angle-=1)     // command to move from 180 degrees to 0 degrees 
+      {     
+        servo4.write(angle+3);   
+        servo3.write(angle);         //command to rotate the servo to the specified angle
+        delay(25);                      
+      } 
+  
 }
